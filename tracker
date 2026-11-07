@@ -1,0 +1,385 @@
+import cv2
+import mediapipe as mp
+import os
+
+# ============================================================
+# AI-BASED REAL-TIME AIR-WRITING RECOGNITION SYSTEM
+# Hand Tracking + Index Finger Tracking
+# MediaPipe 1.0.1
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. MODEL FILE
+# ------------------------------------------------------------
+
+MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "hand_landmarker.task"
+)
+
+if not os.path.exists(MODEL_PATH):
+    print()
+    print("ERROR: hand_landmarker.task not found!")
+    print()
+    print("Please put hand_landmarker.task")
+    print("in the same folder as main.py")
+    print()
+    exit()
+
+
+# ------------------------------------------------------------
+# 2. MEDIAPIPE HAND LANDMARKER
+# ------------------------------------------------------------
+
+BaseOptions = mp.tasks.BaseOptions
+
+HandLandmarker = mp.tasks.vision.HandLandmarker
+
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+
+RunningMode = mp.tasks.vision.RunningMode
+
+
+options = HandLandmarkerOptions(
+
+    base_options=BaseOptions(
+        model_asset_path=MODEL_PATH
+    ),
+
+    running_mode=RunningMode.VIDEO,
+
+    num_hands=1,
+
+    min_hand_detection_confidence=0.7,
+
+    min_hand_presence_confidence=0.7,
+
+    min_tracking_confidence=0.7
+)
+
+
+# ------------------------------------------------------------
+# 3. CREATE HAND LANDMARKER
+# ------------------------------------------------------------
+
+landmarker = HandLandmarker.create_from_options(options)
+
+
+# ------------------------------------------------------------
+# 4. OPEN WEBCAM
+# ------------------------------------------------------------
+
+cap = cv2.VideoCapture(0)
+
+
+if not cap.isOpened():
+
+    print()
+    print("ERROR: Camera could not be opened.")
+    print()
+    
+    landmarker.close()
+    exit()
+
+
+print()
+print("==========================================")
+print(" AI AIR-WRITING SYSTEM STARTED")
+print("==========================================")
+print()
+print("Move your index finger to write.")
+print("Press C to clear the writing.")
+print("Press Q to quit.")
+print()
+
+
+# ------------------------------------------------------------
+# 5. AIR-WRITING DATA
+# ------------------------------------------------------------
+
+points = []
+
+timestamp = 0
+
+
+# ------------------------------------------------------------
+# 6. MAIN LOOP
+# ------------------------------------------------------------
+
+while True:
+
+    success, frame = cap.read()
+
+
+    # If camera frame cannot be read
+    if not success:
+
+        print("ERROR: Could not read camera frame.")
+
+        break
+
+
+    # Mirror the camera
+    frame = cv2.flip(frame, 1)
+
+
+    # Get frame size
+    height, width, _ = frame.shape
+
+
+    # --------------------------------------------------------
+    # Convert OpenCV image from BGR to RGB
+    # --------------------------------------------------------
+
+    rgb_frame = cv2.cvtColor(
+        frame,
+        cv2.COLOR_BGR2RGB
+    )
+
+
+    # --------------------------------------------------------
+    # Create MediaPipe image
+    # --------------------------------------------------------
+
+    mp_image = mp.Image(
+        image_format=mp.ImageFormat.SRGB,
+        data=rgb_frame
+    )
+
+
+    # --------------------------------------------------------
+    # Increase timestamp
+    # --------------------------------------------------------
+
+    timestamp += 33
+
+
+    # --------------------------------------------------------
+    # Detect hand
+    # --------------------------------------------------------
+
+    result = landmarker.detect_for_video(
+        mp_image,
+        timestamp
+    )
+
+
+    # --------------------------------------------------------
+    # HAND DETECTED
+    # --------------------------------------------------------
+
+    if result.hand_landmarks:
+
+        for hand in result.hand_landmarks:
+
+
+            # ------------------------------------------------
+            # Draw all 21 hand landmarks
+            # ------------------------------------------------
+
+            for landmark in hand:
+
+                x = int(landmark.x * width)
+
+                y = int(landmark.y * height)
+
+
+                cv2.circle(
+                    frame,
+                    (x, y),
+                    4,
+                    (255, 0, 0),
+                    -1
+                )
+
+
+            # ------------------------------------------------
+            # Hand connections
+            # ------------------------------------------------
+
+            connections = [
+
+                (0, 1),
+                (1, 2),
+                (2, 3),
+                (3, 4),
+
+                (0, 5),
+                (5, 6),
+                (6, 7),
+                (7, 8),
+
+                (5, 9),
+                (9, 10),
+                (10, 11),
+                (11, 12),
+
+                (9, 13),
+                (13, 14),
+                (14, 15),
+                (15, 16),
+
+                (13, 17),
+                (17, 18),
+                (18, 19),
+                (19, 20),
+
+                (0, 17)
+            ]
+
+
+            for start, end in connections:
+
+                x1 = int(hand[start].x * width)
+                y1 = int(hand[start].y * height)
+
+                x2 = int(hand[end].x * width)
+                y2 = int(hand[end].y * height)
+
+
+                cv2.line(
+                    frame,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 255, 0),
+                    2
+                )
+
+
+            # ------------------------------------------------
+            # INDEX FINGER TIP
+            #
+            # MediaPipe landmark 8 = index fingertip
+            # ------------------------------------------------
+
+            fingertip = hand[8]
+
+
+            x = int(fingertip.x * width)
+
+            y = int(fingertip.y * height)
+
+
+            # ------------------------------------------------
+            # Highlight fingertip
+            # ------------------------------------------------
+
+            cv2.circle(
+                frame,
+                (x, y),
+                10,
+                (0, 0, 255),
+                -1
+            )
+
+
+            # ------------------------------------------------
+            # Save fingertip position
+            # ------------------------------------------------
+
+            points.append(
+                (x, y)
+            )
+
+
+            # Keep only the latest 500 points
+            if len(points) > 500:
+
+                points.pop(0)
+
+
+    # --------------------------------------------------------
+    # DRAW AIR-WRITING PATH
+    # --------------------------------------------------------
+
+    for i in range(1, len(points)):
+
+        cv2.line(
+            frame,
+            points[i - 1],
+            points[i],
+            (255, 255, 0),
+            4
+        )
+
+
+    # --------------------------------------------------------
+    # TEXT ON SCREEN
+    # --------------------------------------------------------
+
+    cv2.putText(
+        frame,
+        "AI AIR-WRITING",
+        (20, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1,
+        (255, 255, 255),
+        2
+    )
+
+
+    cv2.putText(
+        frame,
+        "Move INDEX FINGER to write",
+        (20, 75),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (255, 255, 255),
+        2
+    )
+
+
+    cv2.putText(
+        frame,
+        "C = CLEAR     Q = QUIT",
+        (20, 110),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (255, 255, 255),
+        2
+    )
+
+
+    # --------------------------------------------------------
+    # SHOW CAMERA WINDOW
+    # --------------------------------------------------------
+
+    cv2.imshow(
+        "AI Air-Writing Recognition",
+        frame
+    )
+
+
+    # --------------------------------------------------------
+    # KEYBOARD INPUT
+    # --------------------------------------------------------
+
+    key = cv2.waitKey(1) & 0xFF
+
+
+    # Clear drawing
+    if key == ord("c"):
+
+        points = []
+
+
+    # Quit program
+    elif key == ord("q"):
+
+        break
+
+
+# ------------------------------------------------------------
+# 7. CLOSE EVERYTHING
+# ------------------------------------------------------------
+
+cap.release()
+
+cv2.destroyAllWindows()
+
+landmarker.close()
+
+
+print()
+print("Program closed.")
